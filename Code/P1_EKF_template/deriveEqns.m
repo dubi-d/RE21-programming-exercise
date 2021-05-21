@@ -64,6 +64,9 @@ vr = 0;
 vrho = 0;
 vb = 0;
 
+% Q with v = 0
+qv0 = simplify(eval(q));
+
 % Calculate Prior update Jacobians
 A = simplify(eval(jacobian(q, x)));
 L = simplify(eval(jacobian(q, v)));
