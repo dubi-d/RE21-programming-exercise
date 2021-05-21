@@ -106,20 +106,35 @@ x_prior = xAndP(end, 1:n_states);
 
 
 % measurement update
+H = evalH(estState.xm, estConst);
+M = evalM();
+R = diag([estConst.DistNoiseA, estConst.DistNoiseB, estConst.DistNoiseC,...
+          estConst.GyroNoise, estConst.CompassNoise]);
+K = P_prior * H' / (H * P_prior * H' + M * R * M');
+
+h = evalh(x_prior, estConst);
+diff = sense' - h;
+diff(diff==inf) = 0; % filter out inactive measurements
+x_posterior = x_prior + (K * diff)';
+KH = K*H;
+KH(sense'==inf,:) = 0; % filter out inactive measurements
+P_posterior = (eye(n_states) - KH) * P_prior;
+estState.xm = x_posterior';
+estState.Pm = P_posterior;
 
 % Get resulting estimates and variances
 % Output quantities
-posEst = estState.xm(1:2);
-% linVelEst = ...
-% oriEst = ...
-% windEst = ...
-% driftEst = ...
+posEst = x_posterior(1:2);
+linVelEst = x_posterior(3:4);
+oriEst = x_posterior(5);
+windEst = x_posterior(6);
+driftEst = x_posterior(7);
 % 
-% posVar = ...
-% linVelVar = ...
-% oriVar = ...
-% windVar = ...
-% driftVar = ...
+posVar = diag(P_posterior(1:2, 1:2));
+linVelVar = diag(P_posterior(3:4, 3:4));
+oriVar = P_posterior(5, 5);
+windVar = P_posterior(6, 6);
+driftVar = P_posterior(7, 7);
 
 end
 
@@ -188,6 +203,47 @@ L = [                           0,     0, 0, 0;
                            0, Cr*ur, 0, 0;
                            0,     0, 1, 0
                            0,     0, 0, 1];
+end
+
+function h = evalh(x, estConst)
+px = x(1);
+py = x(2);
+phi = x(5);
+b = x(7);
+xa = estConst.pos_radioA(1);
+ya = estConst.pos_radioA(2);
+xb = estConst.pos_radioB(1);
+yb = estConst.pos_radioB(2);
+xc = estConst.pos_radioC(1);
+yc = estConst.pos_radioC(2);
+
+h = [((px - xa)^2 + (py - ya)^2)^(1/2);
+ ((px - xb)^2 + (py - yb)^2)^(1/2);
+ ((px - xc)^2 + (py - yc)^2)^(1/2);
+                                b + phi;
+                                    phi];
+end
+
+function H = evalH(x, estConst)
+px = x(1);
+py = x(2);
+xa = estConst.pos_radioA(1);
+ya = estConst.pos_radioA(2);
+xb = estConst.pos_radioB(1);
+yb = estConst.pos_radioB(2);
+xc = estConst.pos_radioC(1);
+yc = estConst.pos_radioC(2);
+
+H = [ (px - xa)/((px - xa)^2 + (py - ya)^2)^(1/2), (py - ya)/((px - xa)^2 + (py - ya)^2)^(1/2), 0, 0, 0, 0, 0;
+ (px - xb)/((px - xb)^2 + (py - yb)^2)^(1/2), (py - yb)/((px - xb)^2 + (py - yb)^2)^(1/2), 0, 0, 0, 0, 0;
+ (px - xc)/((px - xc)^2 + (py - yc)^2)^(1/2), (py - yc)/((px - xc)^2 + (py - yc)^2)^(1/2), 0, 0, 0, 0, 0;
+                                           0,                                           0, 0, 0, 1, 0, 1;
+                                           0,                                           0, 0, 0, 1, 0, 0];
+
+end
+
+function M = evalM()
+M = eye(5);
 end
 
 function qAndPdot = evalqAndPdot(xAndP, u, estConst, n_states)
