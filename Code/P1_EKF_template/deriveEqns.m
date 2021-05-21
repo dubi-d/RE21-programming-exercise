@@ -78,6 +78,9 @@ wc = 0;
 wg = 0;
 wn = 0;
 
+% h with w=0
+hw0 = simplify(eval(h));
+
 % Calculate Posterior update Jacobians
 H = simplify(eval(jacobian(h, x)));
 M = eval(jacobian(h, w));
