@@ -75,7 +75,7 @@ if (tm == 0)
     driftEst = 0; % 1x1 matrix
     
     % initial state variance
-    posVar = [estConst.StartRadiusBound^2, estConst.StartRadiusBound^2]; % 1x2 matrix
+    posVar = [1/4*estConst.StartRadiusBound^2, 1/4*estConst.StartRadiusBound^2]; % 1x2 matrix
     linVelVar = zeros(1, 2); % 1x2 matrix
     oriVar = (2 * estConst.RotationStartBound)^2 / 12; % 1x1 matrix
     windVar = (2 * estConst.WindAngleStartBound)^2 / 12; % 1x1 matrix
