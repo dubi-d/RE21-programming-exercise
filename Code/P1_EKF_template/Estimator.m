@@ -3,7 +3,7 @@ function [posEst,linVelEst,oriEst,windEst,driftEst,...
     Estimator(estState,actuate,sense,tm,estConst)
 % [posEst,linVelEst,oriEst,windEst,driftEst,...
 %    posVar,linVelVar,oriVar,windVar,driftVar,estState] = 
-% Estimator(estState,actuate,sense,tm,estConst)
+% Estimator(estState,actuate,sense,tm,estestConst)
 %
 % The estimator.
 %
@@ -26,7 +26,7 @@ function [posEst,linVelEst,oriEst,windEst,driftEst,...
 %   tm              time t_k, scalar
 %                   If tm==0 initialization, otherwise estimator
 %                   iteration step.
-%   estConst        estimator constants (as in EstimatorConst.m)
+%   estestConst        estimator estConstants (as in EstimatorestConst.m)
 %
 % Outputs:
 %   posEst          position estimate (time step k), [1x2]-vector
@@ -66,7 +66,6 @@ function [posEst,linVelEst,oriEst,windEst,driftEst,...
 %% Initialization
 if (tm == 0)
     % Do the initialization of your estimator here!
-    const = EstimatorConst();
     
     % initial state mean
     posEst = zeros(1, 2); % 1x2 matrix
@@ -76,11 +75,11 @@ if (tm == 0)
     driftEst = 0; % 1x1 matrix
     
     % initial state variance
-    posVar = [const.StartRadiusBound^2, const.StartRadiusBound^2]; % 1x2 matrix
+    posVar = [estConst.StartRadiusBound^2, estConst.StartRadiusBound^2]; % 1x2 matrix
     linVelVar = zeros(1, 2); % 1x2 matrix
-    oriVar = (2 * const.RotationStartBound)^2 / 12; % 1x1 matrix
-    windVar = (2 * const.WindAngleStartBound)^2 / 12; % 1x1 matrix
-    driftVar = (2 * const.GyroDriftStartBound)^2 / 12; % 1x1 matrix
+    oriVar = (2 * estConst.RotationStartBound)^2 / 12; % 1x1 matrix
+    windVar = (2 * estConst.WindAngleStartBound)^2 / 12; % 1x1 matrix
+    driftVar = (2 * estConst.GyroDriftStartBound)^2 / 12; % 1x1 matrix
     
     % estimator variance init (initial posterior variance)
     estState.Pm = diag([posVar, linVelVar, oriVar, windVar, driftVar]);
@@ -88,14 +87,23 @@ if (tm == 0)
     estState.xm = [posEst, linVelEst, oriEst, windEst, driftEst]';
     % time of last update
     estState.tm = tm;
+    return
 end
 
 %% Estimator iteration.
 % get time since last estimator update
+n_states = 7;
 dt = tm - estState.tm;
 estState.tm = tm; % update measurement update time
 
+
 % prior update
+% Intregrate states and variance simultaneously
+xAndP_0 = [estState.xm; reshape(estState.Pm, [], 1)];
+[~, xAndP] = ode45(@(t, xAndP) evalqAndPdot(xAndP, actuate, estConst, n_states), [tm-dt, tm], xAndP_0);
+P_prior = reshape(xAndP(end, n_states+1:end), n_states, n_states);
+x_prior = xAndP(end, 1:n_states);
+
 
 % measurement update
 
@@ -113,4 +121,81 @@ posEst = estState.xm(1:2);
 % windVar = ...
 % driftVar = ...
 
+end
+
+function q = evalq(x, u, estConst)
+sx = x(3);
+sy = x(4); 
+phi = x(5);
+rho = x(6);
+Cdh = estConst.dragCoefficientHydr;
+Cda = estConst.dragCoefficientAir;
+Cw = estConst.windVel;
+Cr = estConst.rudderCoefficient;
+ut = u(1);
+ur = u(2);
+
+q = [
+ sx;
+ sy;
+ cos(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)) - Cda*(sx - Cw*cos(rho))*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)
+ sin(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)) - Cda*(sy - Cw*sin(rho))*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)
+ Cr*ur
+ 0
+ 0
+];
+end
+
+function Pdot = evalPdot(P, x, u, estConst)
+A = evalA(x, u, estConst);
+L = evalL(x, u, estConst);
+Qc = diag([estConst.DragNoise, estConst.RudderNoise,...
+           estConst.WindAngleNoise, estConst.GyroDriftNoise]);
+Pdot = A * P + P * A' + L * Qc * L';
+end
+
+function A = evalA(x, u, estConst)
+sx = x(3);
+sy = x(4); 
+phi = x(5);
+rho = x(6);
+Cdh = estConst.dragCoefficientHydr;
+Cda = estConst.dragCoefficientAir;
+Cw = estConst.windVel;
+ut = u(1);
+A = [ 0, 0,                                                                                                                                                                                       1,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0;
+ 0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       1,                                        0,                                                                                                                                                                                 0, 0;
+ 0, 0, - Cda*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) - 2*Cdh*sx*cos(phi) - (Cda*(sx - Cw*cos(rho))*(2*sx - 2*Cw*cos(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)),                                                           - 2*Cdh*sy*cos(phi) - (Cda*(sx - Cw*cos(rho))*(2*sy - 2*Cw*sin(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)), -sin(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)), (Cda*Cw*(sx - Cw*cos(rho))*(sy*cos(rho) - sx*sin(rho)))/((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) - Cda*Cw*sin(rho)*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2), 0;
+ 0, 0,                                                           - 2*Cdh*sx*sin(phi) - (Cda*(sy - Cw*sin(rho))*(2*sx - 2*Cw*cos(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)), - Cda*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) - 2*Cdh*sy*sin(phi) - (Cda*(sy - Cw*sin(rho))*(2*sy - 2*Cw*sin(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)),  cos(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)), Cda*Cw*cos(rho)*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) + (Cda*Cw*(sy - Cw*sin(rho))*(sy*cos(rho) - sx*sin(rho)))/((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2), 0;
+ 0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0;
+ 0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0;
+ 0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0];
+
+end
+
+function L = evalL(x, u, estConst)
+sx = x(3);
+sy = x(4); 
+phi = x(5);
+Cdh = estConst.dragCoefficientHydr;
+Cr = estConst.rudderCoefficient;
+ur = u(2);
+
+L = [                           0,     0, 0, 0;
+                           0,     0, 0, 0;
+ -Cdh*cos(phi)*(sx^2 + sy^2),     0, 0, 0;
+ -Cdh*sin(phi)*(sx^2 + sy^2),     0, 0, 0;
+                           0, Cr*ur, 0, 0;
+                           0,     0, 1, 0
+                           0,     0, 0, 1];
+end
+
+function qAndPdot = evalqAndPdot(xAndP, u, estConst, n_states)
+% stack evaluations of q and Pdot for integration in ode45 solver (to
+%   compute x_prior and P_prior)
+x = xAndP(1:n_states);
+P = reshape(xAndP(n_states+1:end), n_states, n_states);
+q = evalq(x, u, estConst);
+Pdot = evalPdot(P, x, u, estConst);
+qAndPdot = [q; reshape(Pdot, [], 1)];
 end
