@@ -84,7 +84,7 @@ if (tm == 0)
     % estimator variance init (initial posterior variance)
     estState.Pm = diag([posVar, linVelVar, oriVar, windVar, driftVar]);
     % estimator state
-    estState.xm = [posEst, linVelEst, oriEst, windEst, driftEst]';
+    estState.xm = [posEst, linVelEst, oriEst, windEst, driftEst];
     % time of last update
     estState.tm = tm;
     return
@@ -93,32 +93,37 @@ end
 %% Estimator iteration.
 % get time since last estimator update
 n_states = 7;
-dt = tm - estState.tm;
-estState.tm = tm; % update measurement update time
+% dt = tm - estState.tm;
 
+xm = estState.xm';
+Pm = estState.Pm;
 
 % prior update
 % Intregrate states and variance simultaneously
-xAndP_0 = [estState.xm; reshape(estState.Pm, [], 1)];
-[~, xAndP] = ode45(@(t, xAndP) evalqAndPdot(xAndP, actuate, estConst, n_states), [tm-dt, tm], xAndP_0);
+xAndP_0 = [xm; reshape(Pm, [], 1)];
+[~, xAndP] = ode45(@(t, xAndP) evalqAndPdot(xAndP, actuate, estConst, n_states), [estState.tm, tm], xAndP_0);
 P_prior = reshape(xAndP(end, n_states+1:end), n_states, n_states);
-x_prior = xAndP(end, 1:n_states);
+x_prior = xAndP(end, 1:n_states)';
 
 
 % measurement update
-H = evalH(estState.xm, estConst);
+H = evalH(xm, estConst);
 M = evalM();
 R = diag([estConst.DistNoiseA, estConst.DistNoiseB, estConst.DistNoiseC,...
           estConst.GyroNoise, estConst.CompassNoise]);
-K = P_prior * H' / (H * P_prior * H' + M * R * M');
+K = (P_prior * H') / (H * P_prior * H' + M * R * M');
+
+% No measurement when sense == inf -> remove this column from K
+K(:,sense'==inf) = 0;
+% Remove inf in sense as otherwise multiplication with 0 yields NaN
+sense(sense==inf) = 0;
 
 h = evalh(x_prior, estConst);
-diff = sense' - h;
-diff(diff==inf) = 0; % filter out inactive measurements
-x_posterior = x_prior + (K * diff)';
-KH = K*H;
-KH(sense'==inf,:) = 0; % filter out inactive measurements
-P_posterior = (eye(n_states) - KH) * P_prior;
+x_posterior = x_prior + K * (sense' - h);
+P_posterior = (eye(n_states) - K*H) * P_prior * (eye(n_states) - K * H)' + K*R*K';
+
+% Update estState
+estState.tm = tm; % update measurement update time
 estState.xm = x_posterior';
 estState.Pm = P_posterior;
 
@@ -138,120 +143,130 @@ driftVar = P_posterior(7, 7);
 
 end
 
+
 function q = evalq(x, u, estConst)
-sx = x(3);
-sy = x(4); 
-phi = x(5);
-rho = x(6);
-Cdh = estConst.dragCoefficientHydr;
-Cda = estConst.dragCoefficientAir;
-Cw = estConst.windVel;
-Cr = estConst.rudderCoefficient;
-ut = u(1);
-ur = u(2);
+    sx = x(3);
+    sy = x(4); 
+    phi = x(5);
+    rho = x(6);
+    Cdh = estConst.dragCoefficientHydr;
+    Cda = estConst.dragCoefficientAir;
+    Cw = estConst.windVel;
+    Cr = estConst.rudderCoefficient;
+    ut = u(1);
+    ur = u(2);
 
-q = [
- sx;
- sy;
- cos(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)) - Cda*(sx - Cw*cos(rho))*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)
- sin(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)) - Cda*(sy - Cw*sin(rho))*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)
- Cr*ur
- 0
- 0
-];
+    q = [sx;
+         sy;
+         cos(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)) - Cda*(sx - Cw*cos(rho))*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2);
+         sin(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)) - Cda*(sy - Cw*sin(rho))*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2);
+         Cr*ur;
+         0;
+         0];
 end
 
-function Pdot = evalPdot(P, x, u, estConst)
-A = evalA(x, u, estConst);
-L = evalL(x, u, estConst);
-Qc = diag([estConst.DragNoise, estConst.RudderNoise,...
-           estConst.WindAngleNoise, estConst.GyroDriftNoise]);
-Pdot = A * P + P * A' + L * Qc * L';
-end
-
-function A = evalA(x, u, estConst)
-sx = x(3);
-sy = x(4); 
-phi = x(5);
-rho = x(6);
-Cdh = estConst.dragCoefficientHydr;
-Cda = estConst.dragCoefficientAir;
-Cw = estConst.windVel;
-ut = u(1);
-A = [ 0, 0,                                                                                                                                                                                       1,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0;
- 0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       1,                                        0,                                                                                                                                                                                 0, 0;
- 0, 0, - Cda*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) - 2*Cdh*sx*cos(phi) - (Cda*(sx - Cw*cos(rho))*(2*sx - 2*Cw*cos(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)),                                                           - 2*Cdh*sy*cos(phi) - (Cda*(sx - Cw*cos(rho))*(2*sy - 2*Cw*sin(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)), -sin(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)), (Cda*Cw*(sx - Cw*cos(rho))*(sy*cos(rho) - sx*sin(rho)))/((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) - Cda*Cw*sin(rho)*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2), 0;
- 0, 0,                                                           - 2*Cdh*sx*sin(phi) - (Cda*(sy - Cw*sin(rho))*(2*sx - 2*Cw*cos(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)), - Cda*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) - 2*Cdh*sy*sin(phi) - (Cda*(sy - Cw*sin(rho))*(2*sy - 2*Cw*sin(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)),  cos(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)), Cda*Cw*cos(rho)*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) + (Cda*Cw*(sy - Cw*sin(rho))*(sy*cos(rho) - sx*sin(rho)))/((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2), 0;
- 0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0;
- 0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0;
- 0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0];
-
-end
-
-function L = evalL(x, u, estConst)
-sx = x(3);
-sy = x(4); 
-phi = x(5);
-Cdh = estConst.dragCoefficientHydr;
-Cr = estConst.rudderCoefficient;
-ur = u(2);
-
-L = [                           0,     0, 0, 0;
-                           0,     0, 0, 0;
- -Cdh*cos(phi)*(sx^2 + sy^2),     0, 0, 0;
- -Cdh*sin(phi)*(sx^2 + sy^2),     0, 0, 0;
-                           0, Cr*ur, 0, 0;
-                           0,     0, 1, 0
-                           0,     0, 0, 1];
-end
 
 function h = evalh(x, estConst)
-px = x(1);
-py = x(2);
-phi = x(5);
-b = x(7);
-xa = estConst.pos_radioA(1);
-ya = estConst.pos_radioA(2);
-xb = estConst.pos_radioB(1);
-yb = estConst.pos_radioB(2);
-xc = estConst.pos_radioC(1);
-yc = estConst.pos_radioC(2);
+    px = x(1);
+    py = x(2);
+    phi = x(5);
+    b = x(7);
+    xa = estConst.pos_radioA(1);
+    ya = estConst.pos_radioA(2);
+    xb = estConst.pos_radioB(1);
+    yb = estConst.pos_radioB(2);
+    xc = estConst.pos_radioC(1);
+    yc = estConst.pos_radioC(2);
 
-h = [((px - xa)^2 + (py - ya)^2)^(1/2);
- ((px - xb)^2 + (py - yb)^2)^(1/2);
- ((px - xc)^2 + (py - yc)^2)^(1/2);
-                                b + phi;
-                                    phi];
+    h = [((px - xa)^2 + (py - ya)^2)^(1/2);
+         ((px - xb)^2 + (py - yb)^2)^(1/2);
+         ((px - xc)^2 + (py - yc)^2)^(1/2);
+         b + phi;
+         phi];
 end
 
-function H = evalH(x, estConst)
-px = x(1);
-py = x(2);
-xa = estConst.pos_radioA(1);
-ya = estConst.pos_radioA(2);
-xb = estConst.pos_radioB(1);
-yb = estConst.pos_radioB(2);
-xc = estConst.pos_radioC(1);
-yc = estConst.pos_radioC(2);
 
-H = [ (px - xa)/((px - xa)^2 + (py - ya)^2)^(1/2), (py - ya)/((px - xa)^2 + (py - ya)^2)^(1/2), 0, 0, 0, 0, 0;
- (px - xb)/((px - xb)^2 + (py - yb)^2)^(1/2), (py - yb)/((px - xb)^2 + (py - yb)^2)^(1/2), 0, 0, 0, 0, 0;
- (px - xc)/((px - xc)^2 + (py - yc)^2)^(1/2), (py - yc)/((px - xc)^2 + (py - yc)^2)^(1/2), 0, 0, 0, 0, 0;
-                                           0,                                           0, 0, 0, 1, 0, 1;
-                                           0,                                           0, 0, 0, 1, 0, 0];
+
+function A = evalA(x, u, estConst)
+    sx = x(3);
+    sy = x(4); 
+    phi = x(5);
+    rho = x(6);
+    Cdh = estConst.dragCoefficientHydr;
+    Cda = estConst.dragCoefficientAir;
+    Cw = estConst.windVel;
+    ut = u(1);
+    
+    A = [0, 0,                                                                                                                                                                                       1,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0;
+         0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       1,                                        0,                                                                                                                                                                                 0, 0;
+         0, 0, - Cda*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) - 2*Cdh*sx*cos(phi) - (Cda*(sx - Cw*cos(rho))*(2*sx - 2*Cw*cos(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)),                                                           - 2*Cdh*sy*cos(phi) - (Cda*(sx - Cw*cos(rho))*(2*sy - 2*Cw*sin(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)), -sin(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)), (Cda*Cw*(sx - Cw*cos(rho))*(sy*cos(rho) - sx*sin(rho)))/((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) - Cda*Cw*sin(rho)*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2), 0;
+         0, 0,                                                           - 2*Cdh*sx*sin(phi) - (Cda*(sy - Cw*sin(rho))*(2*sx - 2*Cw*cos(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)), - Cda*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) - 2*Cdh*sy*sin(phi) - (Cda*(sy - Cw*sin(rho))*(2*sy - 2*Cw*sin(rho)))/(2*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2)),  cos(phi)*(tanh(ut) - Cdh*(sx^2 + sy^2)), Cda*Cw*cos(rho)*((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2) + (Cda*Cw*(sy - Cw*sin(rho))*(sy*cos(rho) - sx*sin(rho)))/((sx - Cw*cos(rho))^2 + (sy - Cw*sin(rho))^2)^(1/2), 0;
+         0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0;
+         0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0;
+         0, 0,                                                                                                                                                                                       0,                                                                                                                                                                                       0,                                        0,                                                                                                                                                                                 0, 0];
+
+end
+
+
+
+function L = evalL(x, u, estConst)
+    sx = x(3);
+    sy = x(4); 
+    phi = x(5);
+    Cdh = estConst.dragCoefficientHydr;
+    Cr = estConst.rudderCoefficient;
+    ur = u(2);
+
+    L = [                      0,     0, 0, 0;
+                               0,     0, 0, 0;
+     -Cdh*cos(phi)*(sx^2 + sy^2),     0, 0, 0;
+     -Cdh*sin(phi)*(sx^2 + sy^2),     0, 0, 0;
+                               0, Cr*ur, 0, 0;
+                               0,     0, 1, 0
+                               0,     0, 0, 1];
+end
+
+
+function Pdot = evalPdot(P, x, u, estConst)
+    A = evalA(x, u, estConst);
+    L = evalL(x, u, estConst);
+    Qc = diag([estConst.DragNoise, estConst.RudderNoise,...
+               estConst.WindAngleNoise, estConst.GyroDriftNoise]);
+           
+    Pdot = A * P + P * A' + L * Qc * L';
+end
+
+
+function qAndPdot = evalqAndPdot(xAndP, u, estConst, n_states)
+    % stack evaluations of q and Pdot for integration in ode45 solver (to compute x_prior and P_prior)
+    x = xAndP(1:n_states);
+    P = reshape(xAndP(n_states+1:end), n_states, n_states);
+    
+    q = evalq(x, u, estConst);
+    Pdot = evalPdot(P, x, u, estConst);
+    
+    qAndPdot = [q; reshape(Pdot, [], 1)];
+end
+
+
+function H = evalH(x, estConst)
+    px = x(1);
+    py = x(2);
+    xa = estConst.pos_radioA(1);
+    ya = estConst.pos_radioA(2);
+    xb = estConst.pos_radioB(1);
+    yb = estConst.pos_radioB(2);
+    xc = estConst.pos_radioC(1);
+    yc = estConst.pos_radioC(2);
+
+    H = [(px - xa)/((px - xa)^2 + (py - ya)^2)^(1/2), (py - ya)/((px - xa)^2 + (py - ya)^2)^(1/2), 0, 0, 0, 0, 0;
+         (px - xb)/((px - xb)^2 + (py - yb)^2)^(1/2), (py - yb)/((px - xb)^2 + (py - yb)^2)^(1/2), 0, 0, 0, 0, 0;
+         (px - xc)/((px - xc)^2 + (py - yc)^2)^(1/2), (py - yc)/((px - xc)^2 + (py - yc)^2)^(1/2), 0, 0, 0, 0, 0;
+                                                   0,                                           0, 0, 0, 1, 0, 1;
+                                                   0,                                           0, 0, 0, 1, 0, 0];
 
 end
 
 function M = evalM()
-M = eye(5);
-end
-
-function qAndPdot = evalqAndPdot(xAndP, u, estConst, n_states)
-% stack evaluations of q and Pdot for integration in ode45 solver (to
-%   compute x_prior and P_prior)
-x = xAndP(1:n_states);
-P = reshape(xAndP(n_states+1:end), n_states, n_states);
-q = evalq(x, u, estConst);
-Pdot = evalPdot(P, x, u, estConst);
-qAndPdot = [q; reshape(Pdot, [], 1)];
+    M = eye(5);
 end
