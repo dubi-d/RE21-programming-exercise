@@ -47,4 +47,4 @@ const.epsilon = 0.01; % Parameter for measurement noise w
 
 %% Times
 % Number of samples (discrete time steps) of the simulation.
-const.N = 500;
+const.N = 1000;

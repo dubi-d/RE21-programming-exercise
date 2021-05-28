@@ -94,7 +94,7 @@ end
 postParticles.x_r = x_r(idxResampled);
 postParticles.y_r = y_r(idxResampled);
 postParticles.phi = phi(idxResampled);
-postParticles.kappa = roughening_Kappa(0.5, kappa(idxResampled), N_particles, 1);
+postParticles.kappa = roughening(0.1, kappa(idxResampled), N_particles, 1);
 
 end % end estimator
 
@@ -187,6 +187,10 @@ function [tmin] = calcMinDistParticle(basePts, vecs, px, py, phi, kappa)
     s = diff((basePts - p) .* fliplr(r), 1, 2) ./ diff(fliplr(vecs) .* r, 1, 2);
     
     tmin = min(t((s >= 0) & (s <= 1) & (t >= 0)));
+    
+    if isempty(tmin) 
+        tmin = inf;
+    end
 end
 
 function t_mins = calcMinDistances(basePts, vecs, px, py, phi, kappa)
@@ -200,7 +204,7 @@ end
 %% Measurement Probability
 
 function measProb = measurementProbabilities(t, z, epsilon)
-    d = abs(t-z);
+    d = abs(z-t);
     
     measProb = zeros(size(d));
     measProb(d < 2*epsilon) = 1/(5*epsilon)*(2 - d(d < 2*epsilon)/epsilon);
@@ -208,8 +212,8 @@ function measProb = measurementProbabilities(t, z, epsilon)
 end
 
 %% Roughening of Kappa Estimate
-function [rough_kappa] = roughening_Kappa(K, est_kappa, n_particles, n_states)
+function [rough] = roughening(K, est, n_particles, n_states)
     % Tuning Parameter K,
-    E = max(est_kappa) - min(est_kappa);
-    rough_kappa = est_kappa + K * E * n_particles^(-1/n_states) .* randn(1, n_particles);
+    E = max(est) - min(est);
+    rough = est + K * E * n_particles^(-1/n_states) .* randn(1, n_particles);
 end
