@@ -1,108 +1,108 @@
 function [postParticles] = Estimator(prevPostParticles, sens, act, estConst, km)
-% The estimator function. The function will be called in two different
-% modes: If km==0, the estimator is initialized. If km > 0, the
-% estimator does an iteration for a single sample time interval using the 
-% previous posterior particles passed to the estimator in
-% prevPostParticles and the sensor measurement and control inputs.
-%
-% Inputs:
-%   prevPostParticles   previous posterior particles at time step k-1
-%                       The fields of the struct are [1xN_particles]-vector
-%                       (N_particles is the number of particles) 
-%                       corresponding to: 
-%                       .x_r: x-locations of the robot [m]
-%                       .y_r: y-locations of the robot [m]
-%                       .phi: headings of the robot [rad]
-%                       .kappa: wall offset [m]
-%                           
-%   sens                Sensor measurement z(k), scalar
-%
-%   act                 Control inputs u(k-1), [1x2]-vector
-%                       act(1): u_f, forward control input
-%                       act(2): u_phi, angular control input
-%
-%   estConst            estimator constants (as in EstimatorConst.m)
-%
-%   km                  time index k, scalar
-%                       corresponds to continous time t = k*Ts
-%                       If km==0 initialization, otherwise estimator
-%                       iteration step.
-%
-% Outputs:
-%   postParticles       Posterior particles at time step k
-%                       The fields of the struct are [1xN_particles]-vector
-%                       (N_particles is the number of particles) 
-%                       corresponding to: 
-%                       .x_r: x-locations of the robot [m]
-%                       .y_r: y-locations of the robot [m]
-%                       .phi: headings of the robot [rad]
-%                       .kappa: wall offset [m]
-%
-%
-% Class:
-% Recursive Estimation
-% Spring 2021
-% Programming Exercise 2
-%
-% --
-% ETH Zurich
-% Institute for Dynamic Systems and Control
-% Raffaello D'Andrea, Matthias Hofer, Carlo Sferrazza
-% hofermat@ethz.ch
-% csferrazza@ethz.ch
+    % The estimator function. The function will be called in two different
+    % modes: If km==0, the estimator is initialized. If km > 0, the
+    % estimator does an iteration for a single sample time interval using the 
+    % previous posterior particles passed to the estimator in
+    % prevPostParticles and the sensor measurement and control inputs.
+    %
+    % Inputs:
+    %   prevPostParticles   previous posterior particles at time step k-1
+    %                       The fields of the struct are [1xN_particles]-vector
+    %                       (N_particles is the number of particles) 
+    %                       corresponding to: 
+    %                       .x_r: x-locations of the robot [m]
+    %                       .y_r: y-locations of the robot [m]
+    %                       .phi: headings of the robot [rad]
+    %                       .kappa: wall offset [m]
+    %                           
+    %   sens                Sensor measurement z(k), scalar
+    %
+    %   act                 Control inputs u(k-1), [1x2]-vector
+    %                       act(1): u_f, forward control input
+    %                       act(2): u_phi, angular control input
+    %
+    %   estConst            estimator constants (as in EstimatorConst.m)
+    %
+    %   km                  time index k, scalar
+    %                       corresponds to continous time t = k*Ts
+    %                       If km==0 initialization, otherwise estimator
+    %                       iteration step.
+    %
+    % Outputs:
+    %   postParticles       Posterior particles at time step k
+    %                       The fields of the struct are [1xN_particles]-vector
+    %                       (N_particles is the number of particles) 
+    %                       corresponding to: 
+    %                       .x_r: x-locations of the robot [m]
+    %                       .y_r: y-locations of the robot [m]
+    %                       .phi: headings of the robot [rad]
+    %                       .kappa: wall offset [m]
+    %
+    %
+    % Class:
+    % Recursive Estimation
+    % Spring 2021
+    % Programming Exercise 2
+    %
+    % --
+    % ETH Zurich
+    % Institute for Dynamic Systems and Control
+    % Raffaello D'Andrea, Matthias Hofer, Carlo Sferrazza
+    % hofermat@ethz.ch
+    % csferrazza@ethz.ch
 
-% Set number of particles:
-N_particles = 4000; % obviously, you will need more particles than 10.
+    % Set number of particles:
+    N_particles = 4000; % obviously, you will need more particles than 10.
 
-%% Mode 1: Initialization
-if (km == 0)
-    % Do the initialization of your estimator here!
+    %% Mode 1: Initialization
+    if (km == 0)
+        % Do the initialization of your estimator here!
+
+        [x_samples, y_samples] = sample_init_positions(N_particles, estConst);
+        postParticles.x_r = x_samples; % 1xN_particles matrix
+        postParticles.y_r = y_samples; % 1xN_particles matrix
+        postParticles.phi = get_uni_vec(estConst.phi_0, N_particles); % 1xN_particles matrix
+        postParticles.kappa = get_uni_vec(estConst.l, N_particles); % 1xN_particles matrix
+
+        % and leave the function
+        return;
+    end % end init
+
+    %% Mode 2: Estimator iteration.
+    % If km > 0, we perform a regular update of the estimator.
+    % Prior Update:
+    [x_r, y_r, phi, kappa] = move_particles(prevPostParticles, act, estConst, N_particles);
+
+    % Posterior Update:
+    [basePts, vecs] = initContourVectors(estConst.contour);
+    t_min = calcMinDistances(basePts, vecs, x_r, y_r, phi, kappa);
+    p_meas = measurementProbabilities(t_min, sens, estConst.epsilon);
+
+    alpha = sum(p_meas);
     
-    [x_samples, y_samples] = sample_init_positions(N_particles, estConst);
-    postParticles.x_r = x_samples; % 1xN_particles matrix
-    postParticles.y_r = y_samples; % 1xN_particles matrix
-    postParticles.phi = get_uni_vec(estConst.phi_0, N_particles); % 1xN_particles matrix
-    postParticles.kappa = get_uni_vec(estConst.l, N_particles); % 1xN_particles matrix
+    while alpha == 0
+        [x_r, y_r, phi, kappa] = resample_after_divergence(N_particles, estConst);
+        
+        t_min = calcMinDistances(basePts, vecs, x_r, y_r, phi, kappa);
+        p_meas = measurementProbabilities(t_min, sens, estConst.epsilon);
+        
+        alpha = sum(p_meas);
+    end
     
-    % and leave the function
-    return;
-end % end init
-
-%% Mode 2: Estimator iteration.
-% If km > 0, we perform a regular update of the estimator.
-
-% Implement your estimator here!
-
-
-% Prior Update:
-[x_r, y_r, phi, kappa] = move_particles(prevPostParticles, act, estConst, N_particles);
-
-% Posterior Update:
-[basePts, vecs] = initContourVectors(estConst.contour);
-t_min = calcMinDistances(basePts, vecs, x_r, y_r, phi, kappa);
-p_meas = measurementProbabilities(t_min, sens, estConst.epsilon);
-
-alpha = sum(p_meas);
-if alpha ~= 0
     weights = p_meas/alpha;
-
     idxResampled = resample(weights);
-else
-    idxResampled = 1:N_particles;
-    [x_r, y_r, phi, kappa] = resample_after_divergence(N_particles, estConst);
-end
 
-postParticles.x_r = x_r(idxResampled);
-postParticles.y_r = y_r(idxResampled);
-postParticles.phi = phi(idxResampled);
-postParticles.kappa = roughening(0.05, kappa(idxResampled), N_particles, 4);
+    postParticles.x_r = x_r(idxResampled);
+    postParticles.y_r = y_r(idxResampled);
+    postParticles.phi = phi(idxResampled);
+    postParticles.kappa = roughening(0.05, kappa(idxResampled), N_particles, 4);
 
 end % end estimator
 
 function [uni] = get_uni_vec(bound, N)
-% get a vector (1xN) of samples from uniform(-bound, bound)
-% (shift and scale standard uniform distribution)
-uni = (rand(1, N) - 0.5) * 2 * bound;
+    % get a vector (1xN) of samples from uniform(-bound, bound)
+    % (shift and scale standard uniform distribution)
+    uni = (rand(1, N) - 0.5) * 2 * bound;
 end
 
 function [x_samples, y_samples] = sample_init_positions(N, estConst)
@@ -161,8 +161,8 @@ function [indicesResampled] = resample(weights)
     indicesResampled(i) = j;  % store index of selected sample
 
     u = u + 1/numSpokes;  % move on to the next spoke
-    
-    end   
+
+    end
 end
 
 %% Distance calculation
@@ -179,13 +179,13 @@ function [basePts, vecs] = updateContour(basePts, vecs, kappa)
 end
 
 function [tmin] = calcMinDistParticle(basePts, vecs, px, py, phi, kappa)
-    [basePts, vecs] = updateContour(basePts, vecs, kappa);
+    [basePtsUpdated, vecsUpdated] = updateContour(basePts, vecs, kappa);
     
     p = [px, py];
     r = [cos(phi), sin(phi)];
     
-    t = diff((p - basePts) .* fliplr(vecs), 1, 2) ./ diff(fliplr(r) .* vecs, 1, 2);
-    s = diff((basePts - p) .* fliplr(r), 1, 2) ./ diff(fliplr(vecs) .* r, 1, 2);
+    t = diff((p - basePtsUpdated) .* fliplr(vecsUpdated), 1, 2) ./ diff(fliplr(r) .* vecsUpdated, 1, 2);
+    s = diff((basePtsUpdated - p) .* fliplr(r), 1, 2) ./ diff(fliplr(vecsUpdated) .* r, 1, 2);
     
     tmin = min(t((s >= 0) & (s <= 1) & (t >= 0)));
     
@@ -217,21 +217,23 @@ function [rough] = roughening(K, est, n_particles, n_states)
     % Tuning Parameter K,
     E = max(est) - min(est);
     rough = est + K * E * n_particles^(-1/n_states) .* randn(1, n_particles);
+%     sigma = K * E * n_particles^(-1/n_states);
+%     rough = est + sqrt(12)*sigma*rand(1, n_particles) - sqrt(12)*sigma/2;
 end
 
 %% Resample after divergence
 function [x_particles, y_particles, phi, kappa] = resample_after_divergence(N, estConst)
-% If we have no valid particle anymore, we uniformly sample our particles over a
-% rectangle which encloses the whole contour.
-x_max = max(estConst.contour(:, 1));
-x_min = min(estConst.contour(:, 1));
+    % If we have no valid particle anymore, we uniformly sample our particles over a
+    % rectangle which encloses the whole contour.
+    x_max = max(estConst.contour(:, 1));
+    x_min = min(estConst.contour(:, 1));
 
-y_max = max(estConst.contour(:, 2));
-y_min = min(estConst.contour(:, 2));
+    y_max = max(estConst.contour(:, 2));
+    y_min = min(estConst.contour(:, 2));
 
-x_particles = rand(1, N) .* (x_max - x_min) + x_min;
-y_particles = rand(1, N) .* (y_max - y_min) + y_min;
-phi = get_uni_vec(pi, N); % 1xN_particles matrix, allow angle ranges between - pi to pi
-kappa = get_uni_vec(estConst.l, N); % 1xN_particles matrix
+    x_particles = rand(1, N) .* (x_max - x_min) + x_min;
+    y_particles = rand(1, N) .* (y_max - y_min) + y_min;
+    phi = get_uni_vec(pi, N); % 1xN_particles matrix, allow angle ranges between - pi to pi
+    kappa = get_uni_vec(estConst.l, N); % 1xN_particles matrix
 end
 

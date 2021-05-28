@@ -8,7 +8,7 @@ simConst = EstimatorConst();
 n_particles = 20;
 px = [rand(1, n_particles)*3, 2, 1.5];
 py = [rand(1, n_particles)*3, 2, 1.5];
-phi = [rand(1, n_particles)*2*pi, pi, pi];
+phi = [rand(1, n_particles)*2*pi-pi, pi, pi];
 kappa = [zeros(1,n_particles), 0.1, -0.1];
 tmin = calcMinDistances(basePts, vecs, px, py, phi, kappa);
 
@@ -29,10 +29,12 @@ end
 plot([contour(end,1),contour(1,1)],[contour(end,2),contour(1,2)],'k--')
 
 % Plot particles
-scatter(px, py, 'bo')
 for i = 1:length(px)
-    line([px(i); px(i)+10*cos(phi(i))], [py(i); py(i)+10*sin(phi(i))])
-    scatter(px(i)+tmin(i).*cos(phi(i)), py(i)+tmin(i).*sin(phi(i)), 'rx')
+    if ~isinf(tmin(i))
+        scatter(px(i), py(i), 'bo')
+        line([px(i); px(i)+10*cos(phi(i))], [py(i); py(i)+10*sin(phi(i))])
+        scatter(px(i)+tmin(i).*cos(phi(i)), py(i)+tmin(i).*sin(phi(i)), 'rx')
+    end
 end
 
 hold off

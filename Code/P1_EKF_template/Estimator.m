@@ -120,7 +120,7 @@ sense(sense==inf) = 0;
 
 h = evalh(x_prior, estConst);
 x_posterior = x_prior + K * (sense' - h);
-P_posterior = (eye(n_states) - K*H) * P_prior * (eye(n_states) - K * H)' + K*R*K';
+P_posterior = (eye(n_states) - K*H) * P_prior * (eye(n_states) - K*H)' + K*M*R*M'*K';
 
 % Update estState
 estState.tm = tm; % update measurement update time
