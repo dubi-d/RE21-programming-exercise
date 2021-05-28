@@ -84,3 +84,39 @@ postParticles.phi = ...
 postParticles.kappa = ...
 
 end % end estimator
+
+function [particlesResampled, weightsResampled] = resample(particles, weights)
+
+% systematic resampling (low variance)
+
+% weights are already normalized beforehand (normalization of weights is required or this won't work)
+
+numSpokes = size(particles, 1);  % number of spokes of the resampling wheel (= number of particles to sample)
+u = rand() / numSpokes;  % first spoke's position along the arc of the wheel
+sumWeights = weights(1);  % initialize accumulating sum of weights (= arc length covered so far)
+j = 1;
+particlesResampled = zeros(size(particles));
+weightsResampled = zeros(size(weights));
+
+% going through all the spokes
+for i = 1:numSpokes
+    
+   % check which particle (= arc segment with length of its weight) gets hit by the current spoke
+   while sumWeights < u
+       j = j + 1;
+       sumWeights = sumWeights + weights(j);
+       
+   end
+   
+   % select the sample that gets hit by the current spoke
+   particlesResampled(i, :) = particles(j, :);
+   weightsResampled(i) = weights(j);
+   
+   u = u + 1/numSpokes;  % move on to the next spoke
+    
+end
+
+% re-normalize the new weights
+weightsResampled = weightsResampled / sum(weightsResampled);
+    
+end
