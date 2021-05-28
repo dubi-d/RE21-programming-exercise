@@ -122,18 +122,17 @@ phi = part.phi + u_phi + get_uni_vec(phi_bound, N);
 kappa = part.kappa;
 end
 
-function [particlesResampled, weightsResampled] = resample(particles, weights)
+function [indicesResampled] = resample(weights)
 
 % systematic resampling (low variance)
 
 % weights are already normalized beforehand (normalization of weights is required or this won't work)
 
-numSpokes = size(particles, 1);  % number of spokes of the resampling wheel (= number of particles to sample)
+numSpokes = size(weights, 1);  % number of spokes of the resampling wheel (= number of particles to sample)
 u = rand() / numSpokes;  % first spoke's position along the arc of the wheel
 sumWeights = weights(1);  % initialize accumulating sum of weights (= arc length covered so far)
 j = 1;
-particlesResampled = zeros(size(particles));
-weightsResampled = zeros(size(weights));
+indicesResampled = zeros(size(weights));
 
 % going through all the spokes
 for i = 1:numSpokes
@@ -146,14 +145,9 @@ for i = 1:numSpokes
    end
    
    % select the sample that gets hit by the current spoke
-   particlesResampled(i, :) = particles(j, :);
-   weightsResampled(i) = weights(j);
+   indicesResampled(i, :) = j;  % store index of selected sample
    
    u = u + 1/numSpokes;  % move on to the next spoke
     
-end
-
-% re-normalize the new weights
-weightsResampled = weightsResampled / sum(weightsResampled);
-    
+end    
 end
