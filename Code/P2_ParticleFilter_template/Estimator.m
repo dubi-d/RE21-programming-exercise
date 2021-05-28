@@ -57,11 +57,12 @@ N_particles = 10; % obviously, you will need more particles than 10.
 %% Mode 1: Initialization
 if (km == 0)
     % Do the initialization of your estimator here!
-   
-    postParticles.x_r = ... % 1xN_particles matrix
-    postParticles.y_r = ... % 1xN_particles matrix
-    postParticles.phi = ... % 1xN_particles matrix
-    postParticles.kappa = ... % 1xN_particles matrix
+    
+    [x_samples, y_samples] = sample_init_positions(N_particles, estConst);
+    postParticles.x_r = x_samples; % 1xN_particles matrix
+    postParticles.y_r = y_samples; % 1xN_particles matrix
+    postParticles.phi = (rand(1, N_particles) - 0.5) * 2 * estConst.phi_0; % 1xN_particles matrix
+    postParticles.kappa = (rand(1, N_particles) - 0.5) * 2 * estConst.l; % 1xN_particles matrix
     
     % and leave the function
     return;
@@ -78,12 +79,30 @@ end % end init
 
 % Posterior Update:
 
-postParticles.x_r = ...
-postParticles.y_r = ...
-postParticles.phi = ...
-postParticles.kappa = ...
+% % postParticles.x_r = ...
+% % postParticles.y_r = ...
+% % postParticles.phi = ...
+% % postParticles.kappa = ...
 
 end % end estimator
+
+function [x_samples, y_samples] = sample_init_positions(N, estConst)
+pA = estConst.pA; % center of circle A
+pB = estConst.pB; % center of circle B
+r = estConst.d; % radius of circles
+
+x_samples = zeros(1, N);
+y_samples = zeros(1, N);
+
+for i = 1:N
+    isA = (rand < 0.5); % choose circle
+    xi = (rand - 0.5) * 2 * r; % sample x in generic circle
+    yBound = sqrt(r^2 - xi^2); % compute range of posible y given x
+    yi = (rand - 0.5) * 2 * yBound; % sample y
+    x_samples(i) = xi + pA(1) * isA + pB(1) * (~isA); % shift to given circle
+    y_samples(i) = yi + pA(2) * isA + pB(2) * (~isA);
+end
+end
 
 function [particlesResampled, weightsResampled] = resample(particles, weights)
 
