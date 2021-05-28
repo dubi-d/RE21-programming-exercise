@@ -89,6 +89,7 @@ if alpha ~= 0
     idxResampled = resample(weights);
 else
     idxResampled = 1:N_particles;
+    [x_r, y_r, phi, kappa] = resample_after_divergence(N_particles, estConst);
 end
 
 postParticles.x_r = x_r(idxResampled);
@@ -217,3 +218,20 @@ function [rough] = roughening(K, est, n_particles, n_states)
     E = max(est) - min(est);
     rough = est + K * E * n_particles^(-1/n_states) .* randn(1, n_particles);
 end
+
+%% Resample after divergence
+function [x_particles, y_particles, phi, kappa] = resample_after_divergence(N, estConst)
+% If we have no valid particle anymore, we uniformly sample our particles over a
+% rectangle which encloses the whole contour.
+x_max = max(estConst.contour(:, 1));
+x_min = min(estConst.contour(:, 1));
+
+y_max = max(estConst.contour(:, 2));
+y_min = min(estConst.contour(:, 2));
+
+x_particles = rand(1, N) .* (x_max - x_min) + x_min;
+y_particles = rand(1, N) .* (y_max - y_min) + y_min;
+phi = get_uni_vec(pi, N); % 1xN_particles matrix, allow angle ranges between - pi to pi
+kappa = get_uni_vec(estConst.l, N); % 1xN_particles matrix
+end
+
