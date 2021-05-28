@@ -61,8 +61,8 @@ if (km == 0)
     [x_samples, y_samples] = sample_init_positions(N_particles, estConst);
     postParticles.x_r = x_samples; % 1xN_particles matrix
     postParticles.y_r = y_samples; % 1xN_particles matrix
-    postParticles.phi = (rand(1, N_particles) - 0.5) * 2 * estConst.phi_0; % 1xN_particles matrix
-    postParticles.kappa = (rand(1, N_particles) - 0.5) * 2 * estConst.l; % 1xN_particles matrix
+    postParticles.phi = get_uni_vec(estConst.phi_0, N_particles); % 1xN_particles matrix
+    postParticles.kappa = get_uni_vec(estConst.l, N_particles); % 1xN_particles matrix
     
     % and leave the function
     return;
@@ -75,7 +75,7 @@ end % end init
 
 
 % Prior Update:
-
+[x_r, y_r, phi, kappa] = move_particles(prevPostParticles, act, estConst, N_particles);
 
 % Posterior Update:
 
@@ -85,6 +85,12 @@ end % end init
 % % postParticles.kappa = ...
 
 end % end estimator
+
+function [uni] = get_uni_vec(bound, N)
+% get a vector (1xN) of samples from uniform(-bound, bound)
+% (shift and scale standard uniform distribution)
+uni = (rand(1, N) - 0.5) * 2 * bound;
+end
 
 function [x_samples, y_samples] = sample_init_positions(N, estConst)
 pA = estConst.pA; % center of circle A
@@ -102,6 +108,22 @@ for i = 1:N
     x_samples(i) = xi + pA(1) * isA + pB(1) * (~isA); % shift to given circle
     y_samples(i) = yi + pA(2) * isA + pB(2) * (~isA);
 end
+end
+
+function [x_r, y_r, phi, kappa] = move_particles(part, act, estConst, N)
+% process noise is ~Uniform(-bound, bound)
+f_bound = estConst.sigma_f;
+phi_bound = estConst.sigma_phi;
+
+% vectorize inputs
+u_f = repmat(act(1), 1, N);
+u_phi = repmat(act(2), 1, N);
+
+% apply process model including noise
+x_r = part.x_r + (u_f + get_uni_vec(f_bound, N)) .* cos(part.phi);
+y_r = part.y_r + (u_f + get_uni_vec(f_bound, N)) .* sin(part.phi);
+phi = part.phi + u_phi + get_uni_vec(phi_bound, N);
+kappa = part.kappa;
 end
 
 function [particlesResampled, weightsResampled] = resample(particles, weights)
