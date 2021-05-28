@@ -101,19 +101,15 @@ end
 function [x_samples, y_samples] = sample_init_positions(N, estConst)
     pA = estConst.pA; % center of circle A
     pB = estConst.pB; % center of circle B
-    r = estConst.d; % radius of circles
+    d = estConst.d; % radius of circles
 
-    x_samples = zeros(1, N);
-    y_samples = zeros(1, N);
+    isA = (rand(1, N) < 0.5); % choose circle
+    r = sqrt(rand(1, N)) * d; % sample radius in generic circle
+    theta = rand(1, N) * 2 * pi; % sample angles
 
-    for i = 1:N
-        isA = (rand < 0.5); % choose circle
-        xi = (rand - 0.5) * 2 * r; % sample x in generic circle
-        yBound = sqrt(r^2 - xi^2); % compute range of posible y given x
-        yi = (rand - 0.5) * 2 * yBound; % sample y
-        x_samples(i) = xi + pA(1) * isA + pB(1) * (~isA); % shift to given circle
-        y_samples(i) = yi + pA(2) * isA + pB(2) * (~isA);
-    end
+    % transform to x-y coords, shift to selected circle
+    x_samples = r .* cos(theta) + pA(1) * isA + pB(1) * (~isA);
+    y_samples = r .* sin(theta) + pA(2) * isA + pB(2) * (~isA);
 end
 
 function [x_r, y_r, phi, kappa] = move_particles(part, act, estConst, N)
@@ -132,18 +128,17 @@ function [x_r, y_r, phi, kappa] = move_particles(part, act, estConst, N)
     kappa = part.kappa;
 end
 
-function [particlesResampled, weightsResampled] = resample(particles, weights)
+function [indicesResampled] = resample(weights)
 
     % systematic resampling (low variance)
 
     % weights are already normalized beforehand (normalization of weights is required or this won't work)
 
-    numSpokes = size(particles, 1);  % number of spokes of the resampling wheel (= number of particles to sample)
+    numSpokes = size(weights, 1);  % number of spokes of the resampling wheel (= number of particles to sample)
     u = rand() / numSpokes;  % first spoke's position along the arc of the wheel
     sumWeights = weights(1);  % initialize accumulating sum of weights (= arc length covered so far)
     j = 1;
-    particlesResampled = zeros(size(particles));
-    weightsResampled = zeros(size(weights));
+    indicesResampled = zeros(size(weights));
 
     % going through all the spokes
     for i = 1:numSpokes
@@ -154,18 +149,13 @@ function [particlesResampled, weightsResampled] = resample(particles, weights)
            sumWeights = sumWeights + weights(j);
 
        end
+       
+    % select the sample that gets hit by the current spoke
+    indicesResampled(i) = j;  % store index of selected sample
 
-       % select the sample that gets hit by the current spoke
-       particlesResampled(i, :) = particles(j, :);
-       weightsResampled(i) = weights(j);
-
-       u = u + 1/numSpokes;  % move on to the next spoke
-
-    end
-
-    % re-normalize the new weights
-    weightsResampled = weightsResampled / sum(weightsResampled);
-
+    u = u + 1/numSpokes;  % move on to the next spoke
+    
+    end   
 end
 
 %% Distance calculation
