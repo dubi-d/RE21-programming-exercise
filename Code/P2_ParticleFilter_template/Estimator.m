@@ -52,7 +52,7 @@ function [postParticles] = Estimator(prevPostParticles, sens, act, estConst, km)
 % csferrazza@ethz.ch
 
 % Set number of particles:
-N_particles = 10; % obviously, you will need more particles than 10.
+N_particles = 4000; % obviously, you will need more particles than 10.
 
 %% Mode 1: Initialization
 if (km == 0)
@@ -82,13 +82,19 @@ end % end init
 t_min = calcMinDistances(basePts, vecs, x_r, y_r, phi, kappa);
 p_meas = measurementProbabilities(t_min, sens, estConst.epsilon);
 
-weights = p_meas/sum(p_meas);
+alpha = sum(p_meas);
+if alpha ~= 0
+    weights = p_meas/alpha;
 
+    idxResampled = resample(weights);
+else
+    idxResampled = ones(1, N_particles);
+end
 
-% % postParticles.x_r = ...
-% % postParticles.y_r = ...
-% % postParticles.phi = ...
-% % postParticles.kappa = ...
+postParticles.x_r = x_r(idxResampled);
+postParticles.y_r = y_r(idxResampled);
+postParticles.phi = phi(idxResampled);
+postParticles.kappa = roughening_Kappa(0.5, kappa(idxResampled), N_particles, 1);
 
 end % end estimator
 
@@ -134,7 +140,7 @@ function [indicesResampled] = resample(weights)
 
     % weights are already normalized beforehand (normalization of weights is required or this won't work)
 
-    numSpokes = size(weights, 1);  % number of spokes of the resampling wheel (= number of particles to sample)
+    numSpokes = length(weights);  % number of spokes of the resampling wheel (= number of particles to sample)
     u = rand() / numSpokes;  % first spoke's position along the arc of the wheel
     sumWeights = weights(1);  % initialize accumulating sum of weights (= arc length covered so far)
     j = 1;
@@ -205,5 +211,5 @@ end
 function [rough_kappa] = roughening_Kappa(K, est_kappa, n_particles, n_states)
     % Tuning Parameter K,
     E = max(est_kappa) - min(est_kappa);
-    rough_kappa = est_kappa + sqrt(K * E * n_particles^(-1/n_states)) .* randn(1, N);
+    rough_kappa = est_kappa + K * E * n_particles^(-1/n_states) .* randn(1, n_particles);
 end
