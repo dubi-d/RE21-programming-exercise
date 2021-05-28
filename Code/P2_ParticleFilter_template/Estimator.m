@@ -88,13 +88,13 @@ if alpha ~= 0
 
     idxResampled = resample(weights);
 else
-    idxResampled = ones(1, N_particles);
+    idxResampled = 1:N_particles;
 end
 
 postParticles.x_r = x_r(idxResampled);
 postParticles.y_r = y_r(idxResampled);
 postParticles.phi = phi(idxResampled);
-postParticles.kappa = roughening(0.1, kappa(idxResampled), N_particles, 1);
+postParticles.kappa = roughening(0.05, kappa(idxResampled), N_particles, 4);
 
 end % end estimator
 
