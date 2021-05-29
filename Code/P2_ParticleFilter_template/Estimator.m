@@ -52,7 +52,7 @@ function [postParticles] = Estimator(prevPostParticles, sens, act, estConst, km)
     % csferrazza@ethz.ch
 
     % Set number of particles:
-    N_particles = 4000; % obviously, you will need more particles than 10.
+    N_particles = 20000; % obviously, you will need more particles than 10.
 
     %% Mode 1: Initialization
     if (km == 0)
@@ -129,9 +129,9 @@ function [x_r, y_r, phi, kappa] = move_particles(part, act, estConst, N)
     u_phi = repmat(act(2), 1, N);
 
     % apply process model including noise
-    x_r = part.x_r + (u_f + get_uni_vec(f_bound, N)) .* cos(part.phi);
-    y_r = part.y_r + (u_f + get_uni_vec(f_bound, N)) .* sin(part.phi);
-    phi = part.phi + u_phi + get_uni_vec(phi_bound, N);
+    x_r = part.x_r + (u_f + get_uni_vec(f_bound/2, N)) .* cos(part.phi);
+    y_r = part.y_r + (u_f + get_uni_vec(f_bound/2, N)) .* sin(part.phi);
+    phi = part.phi + u_phi + get_uni_vec(phi_bound/2, N);
     kappa = part.kappa;
 end
 
@@ -206,6 +206,11 @@ end
 
 function measProb = measurementProbabilities(t, z, epsilon)
     d = abs(z-t);
+    
+    if epsilon == 0
+        measProb = d==0;
+        return
+    end
     
     measProb = zeros(size(d));
     measProb(d < 2*epsilon) = 1/(5*epsilon)*(2 - d(d < 2*epsilon)/epsilon);
