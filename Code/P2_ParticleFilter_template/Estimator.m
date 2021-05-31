@@ -52,7 +52,7 @@ function [postParticles] = Estimator(prevPostParticles, sens, act, estConst, km)
     % csferrazza@ethz.ch
 
     % Set number of particles:
-    N_particles = 20000; % obviously, you will need more particles than 10.
+    N_particles = 12000; % obviously, you will need more particles than 10.
 
     %% Mode 1: Initialization
     if (km == 0)
@@ -80,22 +80,22 @@ function [postParticles] = Estimator(prevPostParticles, sens, act, estConst, km)
 
     alpha = sum(p_meas);
     
-    while alpha == 0
-        [x_r, y_r, phi, kappa] = resample_after_divergence(N_particles, estConst);
+    if alpha == 0
+        [x_r, y_r, phi, kappa] = resample_after_divergence(N_particles*5, estConst);
         
         t_min = calcMinDistances(basePts, vecs, x_r, y_r, phi, kappa);
-        p_meas = measurementProbabilities(t_min, sens, estConst.epsilon);
+        p_meas = measurementProbabilities(t_min, sens, estConst.epsilon)+0.001; % +0.001 to avoid having alpha= 0 again
         
         alpha = sum(p_meas);
     end
     
     weights = p_meas/alpha;
-    idxResampled = resample(weights);
+    idxResampled = resample(N_particles, weights);
 
-    postParticles.x_r = x_r(idxResampled);
-    postParticles.y_r = y_r(idxResampled);
-    postParticles.phi = phi(idxResampled);
-    postParticles.kappa = roughening(0.05, kappa(idxResampled), N_particles, 4);
+    postParticles.x_r = roughening(0.01, x_r(idxResampled), N_particles, 4);
+    postParticles.y_r = roughening(0.01, y_r(idxResampled), N_particles, 4);
+    postParticles.phi = roughening(0.05, phi(idxResampled), N_particles, 4);
+    postParticles.kappa = roughening(0.5 - 45*estConst.epsilon, kappa(idxResampled), N_particles, 4);
 
 end % end estimator
 
@@ -135,17 +135,17 @@ function [x_r, y_r, phi, kappa] = move_particles(part, act, estConst, N)
     kappa = part.kappa;
 end
 
-function [indicesResampled] = resample(weights)
+function [indicesResampled] = resample(N, weights)
 
     % systematic resampling (low variance)
 
     % weights are already normalized beforehand (normalization of weights is required or this won't work)
 
-    numSpokes = length(weights);  % number of spokes of the resampling wheel (= number of particles to sample)
+    numSpokes = N;  % number of spokes of the resampling wheel (= number of particles to sample)
     u = rand() / numSpokes;  % first spoke's position along the arc of the wheel
     sumWeights = weights(1);  % initialize accumulating sum of weights (= arc length covered so far)
     j = 1;
-    indicesResampled = zeros(size(weights));
+    indicesResampled = zeros(1, N);
 
     % going through all the spokes
     for i = 1:numSpokes
@@ -206,11 +206,6 @@ end
 
 function measProb = measurementProbabilities(t, z, epsilon)
     d = abs(z-t);
-    
-    if epsilon == 0
-        measProb = d==0;
-        return
-    end
     
     measProb = zeros(size(d));
     measProb(d < 2*epsilon) = 1/(5*epsilon)*(2 - d(d < 2*epsilon)/epsilon);
