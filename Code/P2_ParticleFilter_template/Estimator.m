@@ -92,10 +92,10 @@ function [postParticles] = Estimator(prevPostParticles, sens, act, estConst, km)
     weights = p_meas/alpha;
     idxResampled = resample(N_particles, weights);
 
-    postParticles.x_r = roughening(0.01, x_r(idxResampled), N_particles, 4);
-    postParticles.y_r = roughening(0.01, y_r(idxResampled), N_particles, 4);
-    postParticles.phi = roughening(0.05, phi(idxResampled), N_particles, 4);
-    postParticles.kappa = roughening(0.5 - 45*estConst.epsilon, kappa(idxResampled), N_particles, 4);
+    postParticles.x_r = x_r(idxResampled);
+    postParticles.y_r = y_r(idxResampled);
+    postParticles.phi = roughening(0.01, phi(idxResampled), N_particles, 4);
+    postParticles.kappa = roughening(0.05, kappa(idxResampled), N_particles, 4);
 
 end % end estimator
 
@@ -206,6 +206,7 @@ end
 
 function measProb = measurementProbabilities(t, z, epsilon)
     d = abs(z-t);
+    epsilon = max(0.005, epsilon);
     
     measProb = zeros(size(d));
     measProb(d < 2*epsilon) = 1/(5*epsilon)*(2 - d(d < 2*epsilon)/epsilon);
